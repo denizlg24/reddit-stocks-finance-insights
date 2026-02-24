@@ -23,16 +23,17 @@ export interface PostWithComments {
 export interface RedditData {
   posts: PostWithComments[];
   fetchedAt: string;
-  source: "reddit" | "arctic-shift";
+  source: "arctic-shift";
 }
 
 type FetchResult =
   | { success: true; data: RedditData }
   | { success: false; error: string };
 
+const ARCTIC_SHIFT_BASE = "https://arctic-shift.photon-reddit.com";
 const USER_AGENT = "finance-insights-bot/1.0 (server-side analysis)";
-const REQUEST_TIMEOUT_MS = 10_000;
-const COMMENT_DELAY_MS = 7_000;
+const REQUEST_TIMEOUT_MS = 15_000;
+const COMMENT_DELAY_MS = 500;
 const MIN_SCORE = 25;
 const MAX_POSTS = 25;
 const TOP_POSTS_FOR_COMMENTS = 10;
@@ -42,22 +43,65 @@ function createTimeoutSignal(ms: number): AbortSignal {
   return AbortSignal.timeout(ms);
 }
 
-function sevenDaysAgoUtc(): number {
-  return Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
+function sevenDaysAgoDate(): string {
+  const d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  return d.toISOString().split("T")[0];
 }
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function mapPost(item: Record<string, unknown>): RedditPost {
+  const permalink = String(item.permalink ?? "");
+  return {
+    id: String(item.id ?? ""),
+    title: String(item.title ?? ""),
+    selftext: String(item.selftext ?? ""),
+    author: String(item.author ?? "[deleted]"),
+    score: Number(item.score ?? 0),
+    numComments: Number(item.num_comments ?? 0),
+    createdUtc: Number(item.created_utc ?? 0),
+    permalink: permalink.startsWith("http")
+      ? permalink
+      : `https://www.reddit.com${permalink}`,
+  };
+}
+
 async function fetchPostsFromArcticShift(): Promise<RedditPost[]> {
-  const after = sevenDaysAgoUtc();
-  const url = new URL("https://arctic-shift.photon-reddit.com/api/posts");
+  const after = sevenDaysAgoDate();
+  const url = new URL(`${ARCTIC_SHIFT_BASE}/api/posts/search`);
   url.searchParams.set("subreddit", "stocks");
-  url.searchParams.set("after", String(after));
-  url.searchParams.set("sort", "score");
-  url.searchParams.set("order", "desc");
+  url.searchParams.set("after", after);
+  url.searchParams.set("limit", "auto");
+  url.searchParams.set("sort", "asc");
+
+  const res = await fetch(url.toString(), {
+    headers: { "User-Agent": USER_AGENT },
+    signal: createTimeoutSignal(30_000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Arctic Shift posts returned ${res.status}`);
+  }
+
+  const json = await res.json();
+  const items: Array<Record<string, unknown>> = json.data ?? [];
+
+  return items
+    .map(mapPost)
+    .filter((p) => p.score >= MIN_SCORE && p.id)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_POSTS);
+}
+
+async function fetchCommentsFromArcticShift(
+  postId: string
+): Promise<RedditComment[]> {
+  const url = new URL(`${ARCTIC_SHIFT_BASE}/api/comments/search`);
+  url.searchParams.set("link_id", `t3_${postId}`);
   url.searchParams.set("limit", "100");
+  url.searchParams.set("sort", "desc");
 
   const res = await fetch(url.toString(), {
     headers: { "User-Agent": USER_AGENT },
@@ -65,117 +109,34 @@ async function fetchPostsFromArcticShift(): Promise<RedditPost[]> {
   });
 
   if (!res.ok) {
-    throw new Error(`Arctic Shift returned ${res.status}`);
+    throw new Error(`Arctic Shift comments returned ${res.status}`);
   }
 
   const json = await res.json();
-  const items: Array<Record<string, unknown>> = json.data ?? json;
+  const items: Array<Record<string, unknown>> = json.data ?? [];
 
   return items
     .map((item) => ({
-      id: String(item.id ?? ""),
-      title: String(item.title ?? ""),
-      selftext: String(item.selftext ?? ""),
       author: String(item.author ?? "[deleted]"),
+      body: String(item.body ?? ""),
       score: Number(item.score ?? 0),
-      numComments: Number(item.num_comments ?? 0),
-      createdUtc: Number(item.created_utc ?? 0),
-      permalink: `https://www.reddit.com${item.permalink ?? ""}`,
     }))
-    .filter((p) => p.score >= MIN_SCORE && p.id)
-    .slice(0, MAX_POSTS);
-}
-
-async function fetchPostsFromReddit(): Promise<RedditPost[]> {
-  const res = await fetch(
-    "https://www.reddit.com/r/stocks/top.json?t=week&limit=100",
-    {
-      headers: { "User-Agent": USER_AGENT },
-      signal: createTimeoutSignal(REQUEST_TIMEOUT_MS),
-    }
-  );
-
-  if (!res.ok) {
-    throw new Error(`Reddit returned ${res.status}`);
-  }
-
-  const json = await res.json();
-  const children: Array<{ data: Record<string, unknown> }> =
-    json?.data?.children ?? [];
-
-  return children
-    .map(({ data }) => ({
-      id: String(data.id ?? ""),
-      title: String(data.title ?? ""),
-      selftext: String(data.selftext ?? ""),
-      author: String(data.author ?? "[deleted]"),
-      score: Number(data.score ?? 0),
-      numComments: Number(data.num_comments ?? 0),
-      createdUtc: Number(data.created_utc ?? 0),
-      permalink: `https://www.reddit.com${data.permalink ?? ""}`,
-    }))
-    .filter((p) => p.score >= MIN_SCORE && p.id)
-    .slice(0, MAX_POSTS);
-}
-
-async function fetchComments(postId: string): Promise<RedditComment[]> {
-  const res = await fetch(
-    `https://www.reddit.com/r/stocks/comments/${postId}.json`,
-    {
-      headers: { "User-Agent": USER_AGENT },
-      signal: createTimeoutSignal(REQUEST_TIMEOUT_MS),
-    }
-  );
-
-  if (!res.ok) {
-    throw new Error(`Comments fetch returned ${res.status}`);
-  }
-
-  const json = await res.json();
-  const listing = json?.[1]?.data?.children ?? [];
-
-  return listing
-    .filter(
-      (child: { kind: string }) => child.kind === "t1"
-    )
-    .map((child: { data: Record<string, unknown> }) => ({
-      author: String(child.data.author ?? "[deleted]"),
-      body: String(child.data.body ?? ""),
-      score: Number(child.data.score ?? 0),
-    }))
-    .sort((a: RedditComment, b: RedditComment) => b.score - a.score)
+    .sort((a, b) => b.score - a.score)
     .slice(0, MAX_COMMENTS_PER_POST);
 }
 
 export async function fetchRedditData(): Promise<FetchResult> {
   let posts: RedditPost[];
-  let source: "arctic-shift" | "reddit";
 
   try {
     posts = await fetchPostsFromArcticShift();
-    source = "arctic-shift";
-  } catch (arcticErr) {
-    console.warn(
-      "Arctic Shift failed, falling back to Reddit:",
-      arcticErr instanceof Error ? arcticErr.message : arcticErr
-    );
-
-    try {
-      posts = await fetchPostsFromReddit();
-      source = "reddit";
-    } catch (redditErr) {
-      const message = [
-        "Both Reddit sources failed.",
-        `Arctic Shift: ${arcticErr instanceof Error ? arcticErr.message : String(arcticErr)}`,
-        `Reddit: ${redditErr instanceof Error ? redditErr.message : String(redditErr)}`,
-      ].join(" ");
-
-      return { success: false, error: message };
-    }
+  } catch (err) {
+    const message = `Arctic Shift failed: ${err instanceof Error ? err.message : String(err)}`;
+    return { success: false, error: message };
   }
 
   if (posts.length === 0) {
-    return { success: false, error: "No posts matched filters from either source" };
+    return { success: false, error: "No posts matched filters from Arctic Shift" };
   }
 
   const topPosts = posts.slice(0, TOP_POSTS_FOR_COMMENTS);
@@ -186,7 +147,7 @@ export async function fetchRedditData(): Promise<FetchResult> {
     let comments: RedditComment[] = [];
 
     try {
-      comments = await fetchComments(post.id);
+      comments = await fetchCommentsFromArcticShift(post.id);
     } catch (err) {
       console.warn(
         `Failed to fetch comments for post ${post.id}:`,
@@ -211,7 +172,7 @@ export async function fetchRedditData(): Promise<FetchResult> {
     data: {
       posts: postsWithComments,
       fetchedAt: new Date().toISOString(),
-      source,
+      source: "arctic-shift",
     },
   };
 }
