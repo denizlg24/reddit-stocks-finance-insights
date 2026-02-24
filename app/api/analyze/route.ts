@@ -14,7 +14,7 @@ function isCronAuthorized(request: NextRequest): boolean {
   return authHeader.slice(7) === process.env.CRON_SECRET;
 }
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   const cronAuth = isCronAuthorized(request);
 
   if (!cronAuth) {

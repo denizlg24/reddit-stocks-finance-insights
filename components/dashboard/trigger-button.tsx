@@ -27,7 +27,7 @@ export function TriggerButton({ onComplete }: TriggerButtonProps) {
     setError("");
 
     try {
-      const res = await fetch("/api/analyze", { method: "POST" });
+      const res = await fetch("/api/analyze",{method: "GET"});
 
       if (!res.ok) {
         const data = await res.json();
