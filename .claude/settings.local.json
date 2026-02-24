@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:www.better-auth.com)",
+      "Bash(cd E:\\\\PersonalProjects\\\\finance-insigths:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(cd \"E:\\\\PersonalProjects\\\\finance-insigths\" && bun run build 2>&1)",
+      "WebFetch(domain:github.com)",
+      "Bash(cd:*)",
+      "Bash(cd /e/PersonalProjects/finance-insigths && bun run build 2>&1)",
+      "WebFetch(domain:til.simonwillison.net)",
+      "WebFetch(domain:molehill.io)",
+      "WebFetch(domain:pdfmake.github.io)",
+      "WebFetch(domain:resend.com)"
+    ]
+  }
+}
