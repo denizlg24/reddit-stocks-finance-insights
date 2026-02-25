@@ -29,7 +29,12 @@ export async function sendAnalysisEmail(
 
   const dateSlug = new Date().toISOString().slice(0, 10);
 
-  for (const recipient of recipients) {
+  for (let i = 0; i < recipients.length; i++) {
+    if (i > 0 && i % 2 === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    const recipient = recipients[i];
     try {
       await resend.emails.send({
         from: `Finance Pal <${fromEmail}>`,

@@ -34,7 +34,7 @@ const ARCTIC_SHIFT_BASE = "https://arctic-shift.photon-reddit.com";
 const USER_AGENT = "finance-insights-bot/1.0 (server-side analysis)";
 const REQUEST_TIMEOUT_MS = 15_000;
 const COMMENT_DELAY_MS = 500;
-const MIN_SCORE = 25;
+const MIN_SCORE = 10;
 const MAX_POSTS = 25;
 const TOP_POSTS_FOR_COMMENTS = 10;
 const MAX_COMMENTS_PER_POST = 10;
@@ -43,8 +43,8 @@ function createTimeoutSignal(ms: number): AbortSignal {
   return AbortSignal.timeout(ms);
 }
 
-function sevenDaysAgoDate(): string {
-  const d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+function oneDayAgoDate(): string {
+  const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
   return d.toISOString().split("T")[0];
 }
 
@@ -69,7 +69,7 @@ function mapPost(item: Record<string, unknown>): RedditPost {
 }
 
 async function fetchPostsFromArcticShift(): Promise<RedditPost[]> {
-  const after = sevenDaysAgoDate();
+  const after = oneDayAgoDate();
   const url = new URL(`${ARCTIC_SHIFT_BASE}/api/posts/search`);
   url.searchParams.set("subreddit", "stocks");
   url.searchParams.set("after", after);

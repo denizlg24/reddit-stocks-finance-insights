@@ -69,7 +69,7 @@ export async function runAnalysis(
 
   const userContent = hasData
     ? `Here is the pre-fetched Reddit data from r/stocks. Analyze these posts and produce the top five trade setups as specified.\n\n${formatRedditContext(redditData)}`
-    : "Analyze r/stocks posts from the past 7 days and produce the top five trade setups as specified.";
+    : "Analyze r/stocks posts from the past 24 hours and produce the top five trade setups as specified.";
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-5-20250929",
